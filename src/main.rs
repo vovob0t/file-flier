@@ -1,3 +1,6 @@
+pub mod tui;
+use tui::app::App;
+
 use std::{env::args, process};
 
 use file_flier::config::Config;

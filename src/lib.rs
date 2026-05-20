@@ -1,6 +1,6 @@
 use std::{os::unix::fs::MetadataExt, path::Path};
 
-mod tools;
+pub mod tools;
 use tools::{FileNode, FileSize};
 
 pub mod config;
