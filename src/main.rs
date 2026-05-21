@@ -5,7 +5,8 @@ use std::{env::args, process};
 
 use file_flier::config::Config;
 
-fn main() {
+fn main() -> color_eyre::Result<()> {
+    color_eyre::install()?;
     let args = args().skip(1);
 
     let Ok(config) = Config::new(args) else {
@@ -13,10 +14,15 @@ fn main() {
         process::exit(1);
     };
 
-    if let Err(err) = file_flier::run(config) {
-        println!("Error occured while running program\n{err}");
-        process::exit(1);
-    }
+    ratatui::run(|terminal| App::new(config).run(terminal));
+    // tui::main()?;
+
+    // if let Err(err) = file_flier::run(config) {
+    //     println!("Error occured while running program\n{err}");
+    //     process::exit(1);
+    // }
+
+    Ok(())
 
     // println!("{config:?}");
 }

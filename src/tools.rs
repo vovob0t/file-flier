@@ -1,6 +1,13 @@
-use std::fmt::Display;
+use std::{cell::RefCell, fmt::Display, rc::Rc, u64};
+const TEXT_FG_COLOR: Color = SLATE.c200;
 
-#[derive(Debug)]
+use ratatui::{
+    style::{Color, palette::tailwind::SLATE},
+    text::Line,
+    widgets::{ListItem, ListState},
+};
+
+#[derive(Debug, Clone)]
 pub enum SizeMetric {
     B,
     KB,
@@ -17,26 +24,63 @@ const GB: f64 = MB * 1000.0;
 const TB: f64 = GB * 1000.0;
 const PB: f64 = TB * 1000.0;
 
-#[derive(Debug)]
-pub struct FileSize {
-    size: f64,
-    metric: SizeMetric,
-}
-
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FileNode {
     pub size: FileSize,
     pub name: String,
     pub is_dir: bool,
-    pub children: Vec<FileNode>,
+    pub children: Vec<Rc<RefCell<FileNode>>>,
+    pub state: RefCell<ListState>,
 }
+
 impl FileNode {
-    pub fn new(size: FileSize, name: String, is_dir: bool, children: Vec<FileNode>) -> Self {
+    pub fn new(
+        size: FileSize,
+        name: String,
+        is_dir: bool,
+        children: Vec<Rc<RefCell<FileNode>>>,
+    ) -> Self {
         Self {
             size,
             name,
             is_dir,
             children,
+            state: RefCell::new(ListState::default()),
+        }
+    }
+}
+
+impl Default for FileNode {
+    fn default() -> Self {
+        Self {
+            size: FileSize::default(),
+            name: "DEFAULT_PLACEHOLDER".to_string(),
+            is_dir: false,
+            children: vec![],
+            state: RefCell::new(ListState::default()),
+        }
+    }
+}
+
+impl From<&FileNode> for ListItem<'_> {
+    fn from(value: &FileNode) -> Self {
+        let line = Line::styled(format!("{} - {}", value.name, value.size), TEXT_FG_COLOR);
+
+        ListItem::new(line)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct FileSize {
+    size: f64,
+    metric: SizeMetric,
+}
+
+impl Default for FileSize {
+    fn default() -> Self {
+        Self {
+            size: 0.0,
+            metric: SizeMetric::B,
         }
     }
 }

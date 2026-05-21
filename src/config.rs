@@ -1,4 +1,4 @@
-use std::{error::Error, process};
+use std::{env, error::Error, process};
 
 #[derive(Debug)]
 enum ChartType {
@@ -54,7 +54,15 @@ impl Config {
 
         for (arg_name, value) in args_parsed {
             match arg_name.replace("-", "").as_str() {
-                "p" | "path" => path = String::from(value),
+                "p" | "path" => {
+                    let home = if let Some(home_dir) = env::home_dir() {
+                        home_dir.display().to_string()
+                    } else {
+                        "~".to_string()
+                    };
+
+                    path = String::from(value).replace("~", &home)
+                }
 
                 "c" | "chart" => {
                     chart_type = match value.to_lowercase().as_str() {
@@ -86,25 +94,6 @@ impl Config {
             }
         }
 
-        // let path = match args.next() {
-        //     Some(val) => val,
-        //     _ => String::from("./"),
-        // };
-        // let chart_type = match args.next() {
-        //     Some(val) => match val.to_lowercase().as_str() {
-        //         "pie" => ChartType::Pie,
-        //         "colomns" => ChartType::Colomns,
-        //         "circle" => ChartType::Circle,
-        //         _ => {
-        //             println!("Couldn't find appropriete chart type. Defaulting to Pie");
-        //             ChartType::Pie
-        //         }
-        //     },
-        //     _ => {
-        //         println!("Defaulting to Pie");
-        //         ChartType::Pie
-        //     }
-        // };
         Ok(Self {
             path,
             chart_type,
