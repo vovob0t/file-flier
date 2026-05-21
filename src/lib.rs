@@ -87,7 +87,7 @@ pub fn sort_file_tree(file_tree: &mut FileNode, sort_type: &SortType) {
 pub fn create_dir_tree_from_path(dir: &Path) -> Result<FileNode, Box<dyn std::error::Error>> {
     let mut bytes_count: u64 = 0;
     let mut children: Vec<Rc<RefCell<FileNode>>> = vec![];
-    let mut is_dir: bool = false;
+    let is_dir: bool = true;
     let name = dir.to_str().unwrap().to_string();
 
     if name.starts_with("/proc") {
@@ -116,8 +116,6 @@ pub fn create_dir_tree_from_path(dir: &Path) -> Result<FileNode, Box<dyn std::er
                     children.push(Rc::new(RefCell::new(child_file_node)));
                 }
                 true => {
-                    is_dir = true;
-
                     let Ok(child_dir_node) = create_dir_tree_from_path(&entry.path()) else {
                         // println!("Couldn't read - {:?}", &entry.path());
                         continue;

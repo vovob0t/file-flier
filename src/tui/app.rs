@@ -48,6 +48,13 @@ impl App {
         new_file_tree
     }
 
+    pub fn curent_file_node_mut(&mut self) -> &Rc<RefCell<FileNode>> {
+        self.nodes_history.iter().last().unwrap()
+    }
+    pub fn curent_file_node(&self) -> &Rc<RefCell<FileNode>> {
+        self.nodes_history.iter().last().unwrap()
+    }
+
     pub fn run(mut self, terminal: &mut DefaultTerminal) -> Result<()> {
         while !self.should_exit {
             terminal.draw(|frame| frame.render_widget(&mut self, frame.area()))?;
@@ -83,48 +90,26 @@ impl App {
     }
 
     fn change_curent_path_into_selected(&mut self) {
-        // if let Some(i) = self.file_tree.borrow().state.borrow_mut().selected() {
-        //     self.select_none();
-        //     self.curent_directory = Rc::clone(&self.file_tree.borrow().children[i]);
-        //     // *self.file_tree.borrow_mut() = self.file_tree.borrow_mut().children[i];
-        //     sort_file_tree(&mut self.file_tree.borrow_mut(), &self.config.sort_type);
-        // };
-
-        let i = self
-            .nodes_history
-            .iter()
-            .last()
-            .unwrap()
+        let selected_entry_indx = self
+            .curent_file_node_mut()
             .borrow()
             .state
             .borrow()
             .selected();
-        // if self.nodes_history.len() > 1 {
-        //     panic!("Number {i:?} was selected");
-        // }
 
-        // let i = self.file_tree.borrow().state.borrow().selected();
-        if let Some(i) = i {
-            // self.select_none();
-            let i = Rc::clone(&self.nodes_history.iter().last().unwrap().borrow().children[i]);
+        if let Some(i) = selected_entry_indx {
+            let i = Rc::clone(&self.curent_file_node_mut().borrow().children[i]);
+
             self.nodes_history.push(i);
-            // self.select_none();
-            // self.curent_directory = Rc::clone(&self.file_tree.borrow().children[i]);
-            // *self.file_tree.borrow_mut() = self.file_tree.borrow_mut().children[i];
             sort_file_tree(
                 &mut self.nodes_history.iter().last().unwrap().borrow_mut(),
                 &self.config.sort_type,
             );
         }
-
-        // self.config
     }
 
     fn select_none(&mut self) {
-        self.nodes_history
-            .iter()
-            .last()
-            .unwrap()
+        self.curent_file_node_mut()
             .borrow()
             .state
             .borrow_mut()
@@ -132,40 +117,28 @@ impl App {
     }
 
     fn move_up(&mut self) {
-        self.nodes_history
-            .iter()
-            .last()
-            .unwrap()
+        self.curent_file_node_mut()
             .borrow()
             .state
             .borrow_mut()
             .select_previous();
     }
     fn move_down(&mut self) {
-        self.nodes_history
-            .iter()
-            .last()
-            .unwrap()
+        self.curent_file_node_mut()
             .borrow()
             .state
             .borrow_mut()
             .select_next();
     }
     fn move_to_first(&mut self) {
-        self.nodes_history
-            .iter()
-            .last()
-            .unwrap()
+        self.curent_file_node_mut()
             .borrow()
             .state
             .borrow_mut()
             .select_first();
     }
     fn move_to_last(&mut self) {
-        self.nodes_history
-            .iter()
-            .last()
-            .unwrap()
+        self.curent_file_node_mut()
             .borrow()
             .state
             .borrow_mut()
@@ -225,42 +198,41 @@ impl App {
             .title(
                 Line::raw(format!(
                     "Curent directory - {}, size - {}",
-                    self.nodes_history.iter().last().unwrap().borrow().name,
-                    self.nodes_history.iter().last().unwrap().borrow().size,
+                    self.curent_file_node().borrow().name,
+                    self.curent_file_node().borrow().size,
                 ))
                 .left_aligned(),
             )
             .border_style(TODO_HEADER_STYLE)
             .bg(NORMAL_ROW_BG);
 
-        let entries: Vec<ListItem> =
-            self.nodes_history
-                .iter()
-                .last()
-                .unwrap()
-                .borrow()
-                .children
-                .iter()
-                .enumerate()
-                .map(|(i, entry)| {
-                    let color = alternate_colors(i);
-                    let line = Line::styled(
-                        format!(
-                            "{} - {}",
-                            entry.borrow().name.replace(
-                                &self.nodes_history.iter().last().unwrap().borrow().name,
-                                ""
-                            ) + match entry.borrow().is_dir {
+        let entries: Vec<ListItem> = self
+            .curent_file_node()
+            .borrow()
+            .children
+            .iter()
+            .enumerate()
+            .map(|(i, entry)| {
+                let color = alternate_colors(i);
+                let line = Line::styled(
+                    format!(
+                        "{} - {}",
+                        entry
+                            .borrow()
+                            .name
+                            .replace(&self.curent_file_node().borrow().name, "")
+                            .replace("/", "")
+                            + match entry.borrow().is_dir {
                                 true => "/",
                                 false => " ",
                             },
-                            entry.borrow().size
-                        ),
-                        TEXT_FG_COLOR,
-                    );
-                    ListItem::new(line).bg(color)
-                })
-                .collect();
+                        entry.borrow().size
+                    ),
+                    TEXT_FG_COLOR,
+                );
+                ListItem::new(line).bg(color)
+            })
+            .collect();
 
         let list = List::new(entries)
             .block(block)
@@ -272,14 +244,7 @@ impl App {
             list,
             area,
             buf,
-            &mut self
-                .nodes_history
-                .iter()
-                .last()
-                .unwrap()
-                .borrow()
-                .state
-                .borrow_mut(),
+            &mut self.curent_file_node_mut().borrow().state.borrow_mut(),
         );
     }
 }
