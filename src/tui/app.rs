@@ -3,15 +3,17 @@ use std::rc::Rc;
 
 use color_eyre::Result;
 use crossterm::event::{self, KeyCode, KeyEvent, KeyModifiers};
+use crossterm::terminal;
 use file_flier::sort_file_tree;
 use file_flier::{config::Config, tools::FileNode};
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::palette::tailwind::{BLUE, GREEN, SLATE};
 use ratatui::style::{Color, Modifier, Style, Stylize};
+use ratatui::symbols::border::THICK;
 use ratatui::text::Line;
 use ratatui::widgets::{
-    Block, Borders, HighlightSpacing, List, ListItem, ListState, Padding, Paragraph,
+    Block, Borders, Clear, HighlightSpacing, List, ListItem, ListState, Padding, Paragraph,
     StatefulWidget, Widget, Wrap,
 };
 use ratatui::{DefaultTerminal, symbols};
@@ -31,6 +33,7 @@ pub struct App {
     pub config: Config,
     pub should_exit: bool,
     pub file_tree_initialized: bool,
+    pub loading_screen_initialize: bool,
 }
 
 impl App {
@@ -43,6 +46,7 @@ impl App {
             config: cfg,
             should_exit: false,
             file_tree_initialized: false,
+            loading_screen_initialize: false,
         };
         new_file_tree.curent_directory = Rc::clone(&new_file_tree.file_tree);
         new_file_tree
@@ -58,6 +62,11 @@ impl App {
     pub fn run(mut self, terminal: &mut DefaultTerminal) -> Result<()> {
         while !self.should_exit {
             terminal.draw(|frame| frame.render_widget(&mut self, frame.area()))?;
+
+            if !self.loading_screen_initialize {
+                self.loading_screen_initialize = true;
+                continue;
+            }
 
             if let Some(key) = event::read()?.as_key_press_event() {
                 self.handle_key(key);
@@ -149,6 +158,11 @@ impl App {
 impl Widget for &mut App {
     fn render(self, area: Rect, buf: &mut Buffer) {
         if !self.file_tree_initialized {
+            if !self.loading_screen_initialize {
+                App::render_loading_screen(area, buf);
+                return;
+            }
+
             self.file_tree = Rc::new(RefCell::new(
                 file_flier::create_dir_tree_from_path(self.config.path.as_ref()).unwrap(),
             ));
@@ -159,6 +173,9 @@ impl Widget for &mut App {
             self.nodes_history.push(Rc::clone(&self.file_tree));
 
             self.file_tree_initialized = true;
+            Widget::render(Clear, area, buf);
+
+            // return;
         };
 
         let main_layout = Layout::vertical([
@@ -180,6 +197,20 @@ impl Widget for &mut App {
 
 /// Rendering logic
 impl App {
+    fn render_loading_screen(area: Rect, buf: &mut Buffer) {
+        let block = Block::bordered()
+            .title("Loading screen")
+            .bg(NORMAL_ROW_BG)
+            .border_set(THICK);
+
+        Paragraph::new("Please, wait while FF evaluates file system")
+            .centered()
+            .block(block)
+            .bold()
+            .slow_blink()
+            .render(area, buf);
+    }
+
     fn render_header(area: Rect, buf: &mut Buffer) {
         Paragraph::new("File-flier - disk space analyzer")
             .centered()

@@ -18,6 +18,10 @@ Usage:
 
 ## TODO 
 
-1. Visualization of file tree initializing
+0. Loading screen - DONE
+!1. Make program run file scans in parallel mode
+1. Visualization of file tree initializing (would be cool to show off like a tree that grovs from root, and freeze it for a few seconds before showing files)
 2. Directory space visualization with pie charts and etc.
 3. Mark files and delete them(?)
+4. Press / to search for a file in a curent directory
+5. 
