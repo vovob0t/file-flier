@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::time::{Duration, Instant};
 
 use color_eyre::Result;
 use crossterm::event::{self, KeyCode, KeyEvent, KeyModifiers};
@@ -34,6 +35,7 @@ pub struct App {
     pub should_exit: bool,
     pub file_tree_initialized: bool,
     pub loading_screen_initialize: bool,
+    pub initializing_time: Duration,
 }
 
 impl App {
@@ -47,6 +49,7 @@ impl App {
             should_exit: false,
             file_tree_initialized: false,
             loading_screen_initialize: false,
+            initializing_time: Duration::new(0, 0),
         };
         new_file_tree.curent_directory = Rc::clone(&new_file_tree.file_tree);
         new_file_tree
@@ -107,9 +110,9 @@ impl App {
             .selected();
 
         if let Some(i) = selected_entry_indx {
-            let i = Rc::clone(&self.curent_file_node_mut().borrow().children[i]);
+            let curent_node = Rc::clone(&self.curent_file_node_mut().borrow().children[i]);
 
-            self.nodes_history.push(i);
+            self.nodes_history.push(curent_node);
             sort_file_tree(
                 &mut self.nodes_history.iter().last().unwrap().borrow_mut(),
                 &self.config.sort_type,
@@ -163,6 +166,7 @@ impl Widget for &mut App {
                 return;
             }
 
+            let initialization_time_begin = Instant::now();
             self.file_tree = Rc::new(RefCell::new(
                 file_flier::create_dir_tree_from_path(self.config.path.as_ref()).unwrap(),
             ));
@@ -173,6 +177,7 @@ impl Widget for &mut App {
             self.nodes_history.push(Rc::clone(&self.file_tree));
 
             self.file_tree_initialized = true;
+            self.initializing_time = initialization_time_begin.elapsed();
             Widget::render(Clear, area, buf);
 
             // return;
@@ -189,7 +194,7 @@ impl Widget for &mut App {
         let content_layout = Layout::vertical([Constraint::Fill(1)]);
         let [list_area] = content_area.layout(&content_layout);
 
-        App::render_header(header_area, buf);
+        App::render_header(header_area, buf, self.initializing_time);
         App::render_footer(footer_area, buf);
         self.render_dir_entries(list_area, buf);
     }
@@ -211,11 +216,14 @@ impl App {
             .render(area, buf);
     }
 
-    fn render_header(area: Rect, buf: &mut Buffer) {
-        Paragraph::new("File-flier - disk space analyzer")
-            .centered()
-            .bold()
-            .render(area, buf);
+    fn render_header(area: Rect, buf: &mut Buffer, time: Duration) {
+        Paragraph::new(format!(
+            "File-flier - disk space analyzer\n Time spend initializing file system - {:.2}s",
+            time.as_secs_f32()
+        ))
+        .centered()
+        .bold()
+        .render(area, buf);
     }
 
     fn render_footer(area: Rect, buf: &mut Buffer) {

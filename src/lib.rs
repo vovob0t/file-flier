@@ -101,6 +101,10 @@ pub fn create_dir_tree_from_path(dir: &Path) -> Result<FileNode, Box<dyn std::er
         return Ok(FileNode::new(size, name, is_dir, children));
     };
 
+    //TODO: so the idea is - create a thread avery time nesting into directory (and maybee when
+    //counting file sizes) happens and send info
+    //TODO: back using channels
+
     for entry in dir_entries {
         // println!("Rised");
         match entry {
