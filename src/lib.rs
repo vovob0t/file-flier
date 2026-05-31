@@ -1,4 +1,12 @@
-use std::{cell::RefCell, os::unix::fs::MetadataExt, path::Path, rc::Rc};
+use std::{
+    cell::RefCell,
+    io,
+    os::unix::fs::MetadataExt,
+    path::Path,
+    rc::Rc,
+    sync::{Arc, Mutex, RwLock, mpsc},
+    thread,
+};
 
 pub mod tools;
 use tools::{FileNode, FileSize};
@@ -42,7 +50,11 @@ pub fn list_directory_items<T: AsRef<Path>>(
     println!("================================");
 
     for dir in &dir_tree.children {
-        println!("{} - {}", dir.borrow().name, dir.borrow().size)
+        println!(
+            "{} - {}",
+            dir.read().unwrap().name,
+            dir.read().unwrap().size
+        )
     }
 
     Ok(dir_tree)
@@ -53,18 +65,20 @@ pub fn sort_file_tree(file_tree: &mut FileNode, sort_type: &SortType) {
         SortType::Size(x) => match x {
             SortDirection::Up => {
                 file_tree.children.sort_by(|a, b| {
-                    a.borrow()
+                    a.read()
+                        .unwrap()
                         .size
                         .size_metric_to_bytes()
-                        .cmp(&b.borrow().size.size_metric_to_bytes())
+                        .cmp(&b.read().unwrap().size.size_metric_to_bytes())
                 });
             }
             SortDirection::Down => {
                 file_tree.children.sort_by(|a, b| {
-                    b.borrow()
+                    b.read()
+                        .unwrap()
                         .size
                         .size_metric_to_bytes()
-                        .cmp(&a.borrow().size.size_metric_to_bytes())
+                        .cmp(&a.read().unwrap().size.size_metric_to_bytes())
                 });
             }
         },
@@ -72,21 +86,25 @@ pub fn sort_file_tree(file_tree: &mut FileNode, sort_type: &SortType) {
             SortDirection::Up => {
                 file_tree
                     .children
-                    .sort_by(|a, b| a.borrow().name.cmp(&b.borrow().name));
+                    .sort_by(|a, b| a.read().unwrap().name.cmp(&b.read().unwrap().name));
             }
             SortDirection::Down => {
                 file_tree
                     .children
-                    .sort_by(|a, b| b.borrow().name.cmp(&a.borrow().name));
+                    .sort_by(|a, b| b.read().unwrap().name.cmp(&a.read().unwrap().name));
             }
         },
         _ => (),
     }
 }
 
-pub fn create_dir_tree_from_path(dir: &Path) -> Result<FileNode, Box<dyn std::error::Error>> {
+pub fn create_dir_tree_from_path(dir: &Path) -> Result<FileNode, io::Error> {
     let mut bytes_count: u64 = 0;
-    let mut children: Vec<Rc<RefCell<FileNode>>> = vec![];
+    let bytes_mutex = Arc::new(Mutex::new(0_u64));
+
+    let mut children: Vec<Arc<RwLock<FileNode>>> = vec![];
+    let mut children_mutex: Arc<RwLock<Vec<Arc<RwLock<FileNode>>>>> = Arc::new(RwLock::new(vec![]));
+
     let is_dir: bool = true;
     let name = dir.to_str().unwrap().to_string();
 
@@ -101,6 +119,8 @@ pub fn create_dir_tree_from_path(dir: &Path) -> Result<FileNode, Box<dyn std::er
         return Ok(FileNode::new(size, name, is_dir, children));
     };
 
+    let mut thread_pool = vec![];
+
     for entry in dir_entries {
         // println!("Rised");
         match entry {
@@ -113,16 +133,39 @@ pub fn create_dir_tree_from_path(dir: &Path) -> Result<FileNode, Box<dyn std::er
                         continue;
                     };
 
-                    children.push(Rc::new(RefCell::new(child_file_node)));
+                    children_mutex
+                        .write()
+                        .unwrap()
+                        .push(Arc::new(RwLock::new(child_file_node)));
                 }
                 true => {
-                    let Ok(child_dir_node) = create_dir_tree_from_path(&entry.path()) else {
-                        // println!("Couldn't read - {:?}", &entry.path());
-                        continue;
-                    };
+                    // let (tx, rx) = mpsc::channel();
 
-                    bytes_count += child_dir_node.size.size_metric_to_bytes();
-                    children.push(Rc::new(RefCell::new(child_dir_node)));
+                    let path = entry.path();
+                    let bytes_ref = Arc::clone(&bytes_mutex);
+                    let children_ref = Arc::clone(&children_mutex);
+
+                    let handle = thread::spawn(move || {
+                        let file_node = create_dir_tree_from_path(&path);
+                        *bytes_ref.lock().unwrap() +=
+                            file_node.as_ref().unwrap().size.size_metric_to_bytes();
+
+                        children_ref
+                            .write()
+                            .unwrap()
+                            .push(Arc::new(RwLock::new(file_node.unwrap())));
+                        // tx.send(file_node).unwrap();
+                        //
+                    });
+
+                    thread_pool.push(handle);
+                    // let Ok(child_dir_node) = create_dir_tree_from_path(&entry.path()) else {
+                    //     // println!("Couldn't read - {:?}", &entry.path());
+                    //     continue;
+                    // };
+
+                    // bytes_count += child_dir_node.size.size_metric_to_bytes();
+                    // children.push(Arc::new(RwLock::new(child_dir_node)));
                 }
             },
             Err(e) => {
@@ -132,9 +175,18 @@ pub fn create_dir_tree_from_path(dir: &Path) -> Result<FileNode, Box<dyn std::er
         }
     }
 
-    let size = FileSize::bytes_to_size_metric(bytes_count);
+    for handle in thread_pool {
+        handle.join().unwrap();
+    }
 
-    Ok(FileNode::new(size, name, is_dir, children))
+    let size = FileSize::bytes_to_size_metric(bytes_count + *bytes_mutex.lock().unwrap());
+
+    Ok(FileNode::new(
+        size,
+        name,
+        is_dir,
+        children_mutex.read().unwrap().to_vec(),
+    ))
 }
 
 pub fn create_file_node_from_path(entry: &Path) -> Result<FileNode, Box<dyn std::error::Error>> {
