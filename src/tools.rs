@@ -1,8 +1,9 @@
+use parking_lot::RwLock;
 use std::{
     cell::RefCell,
     fmt::Display,
     rc::Rc,
-    sync::{Arc, Mutex, RwLock},
+    sync::{Arc, Mutex},
     u64,
 };
 const TEXT_FG_COLOR: Color = SLATE.c200;

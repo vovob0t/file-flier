@@ -6,4 +6,7 @@ edition = "2024"
 [dependencies]
 color-eyre = "0.6.5"
 crossterm = "0.29.0"
+open = "5.3.5"
+# parking_lot = "0.12.5"
+parking_lot = { version = "0.12.5", features = ["deadlock_detection"] }
 ratatui = "0.30.0"

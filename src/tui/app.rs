@@ -1,16 +1,14 @@
-use std::cell::RefCell;
-use std::rc::Rc;
-use std::sync::{Arc, RwLock};
+use parking_lot::RwLock;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use color_eyre::Result;
 use crossterm::event::{self, KeyCode, KeyEvent, KeyModifiers};
-use crossterm::terminal;
 use file_flier::sort_file_tree;
 use file_flier::{config::Config, tools::FileNode};
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::palette::tailwind::{BLUE, GREEN, SLATE};
+use ratatui::style::palette::tailwind::{BLUE, CYAN, GREEN, INDIGO, RED, SLATE, VIOLET, YELLOW};
 use ratatui::style::{Color, Modifier, Style, Stylize};
 use ratatui::symbols::border::THICK;
 use ratatui::text::Line;
@@ -20,10 +18,10 @@ use ratatui::widgets::{
 };
 use ratatui::{DefaultTerminal, symbols};
 
-const TODO_HEADER_STYLE: Style = Style::new().fg(SLATE.c100).bg(BLUE.c800);
-const NORMAL_ROW_BG: Color = SLATE.c950;
-const ALT_ROW_BG_COLOR: Color = SLATE.c900;
-const SELECTED_STYLE: Style = Style::new().bg(SLATE.c800).add_modifier(Modifier::BOLD);
+const TODO_HEADER_STYLE: Style = Style::new().fg(YELLOW.c100).bg(CYAN.c950);
+const NORMAL_ROW_BG: Color = INDIGO.c950;
+const ALT_ROW_BG_COLOR: Color = VIOLET.c950;
+const SELECTED_STYLE: Style = Style::new().bg(SLATE.c400).add_modifier(Modifier::BOLD);
 const TEXT_FG_COLOR: Color = SLATE.c200;
 const COMPLETED_TEXT_FG_COLOR: Color = GREEN.c500;
 
@@ -99,55 +97,40 @@ impl App {
     }
 
     fn change_curent_path_into_selected(&mut self) {
-        let selected_entry_indx = self.curent_file_node_mut().read().unwrap().state.selected();
+        let selected_entry_indx = self.curent_file_node_mut().read().state.selected();
 
         if let Some(i) = selected_entry_indx {
-            let curent_file_node =
-                Arc::clone(&self.curent_file_node_mut().read().unwrap().children[i]);
+            let curent_file_node = Arc::clone(&self.curent_file_node_mut().read().children[i]);
+
+            if !curent_file_node.read().is_dir {
+                if let Err(err) = open::that(&curent_file_node.read().name) {
+                    eprintln!("Error occured when tried to open file - {err}")
+                }
+            };
 
             self.nodes_history.push(curent_file_node);
             sort_file_tree(
-                &mut self.nodes_history.iter().last().unwrap().write().unwrap(),
+                &mut self.nodes_history.iter().last().unwrap().write(),
                 &self.config.sort_type,
             );
         }
     }
 
     fn select_none(&mut self) {
-        self.curent_file_node_mut()
-            .write()
-            .unwrap()
-            .state
-            .select(None);
+        self.curent_file_node_mut().write().state.select(None);
     }
 
     fn move_up(&mut self) {
-        self.curent_file_node_mut()
-            .write()
-            .unwrap()
-            .state
-            .select_previous();
+        self.curent_file_node_mut().write().state.select_previous();
     }
     fn move_down(&mut self) {
-        self.curent_file_node_mut()
-            .write()
-            .unwrap()
-            .state
-            .select_next();
+        self.curent_file_node_mut().write().state.select_next();
     }
     fn move_to_first(&mut self) {
-        self.curent_file_node_mut()
-            .write()
-            .unwrap()
-            .state
-            .select_first();
+        self.curent_file_node_mut().write().state.select_first();
     }
     fn move_to_last(&mut self) {
-        self.curent_file_node_mut()
-            .write()
-            .unwrap()
-            .state
-            .select_last();
+        self.curent_file_node_mut().write().state.select_last();
     }
 }
 
@@ -159,7 +142,7 @@ impl Widget for &mut App {
                 return;
             }
 
-            // self.file_tree.write().unwrap().children = vec![
+            // self.file_tree.write().children = vec![
             //     Arc::new(RwLock::new(FileNode::default())),
             //     Arc::new(RwLock::new(FileNode::default())),
             //     Arc::new(RwLock::new(FileNode::default())),
@@ -173,7 +156,7 @@ impl Widget for &mut App {
                 file_flier::create_dir_tree_from_path(self.config.path.as_ref()).unwrap(),
             ));
 
-            sort_file_tree(&mut self.file_tree.write().unwrap(), &self.config.sort_type);
+            sort_file_tree(&mut self.file_tree.write(), &self.config.sort_type);
 
             self.nodes_history.push(Arc::clone(&self.file_tree));
 
@@ -238,8 +221,8 @@ impl App {
             .title(
                 Line::raw(format!(
                     "Curent directory - {}, size - {}",
-                    self.curent_file_node().read().unwrap().name,
-                    self.curent_file_node().read().unwrap().size,
+                    self.curent_file_node().read().name,
+                    self.curent_file_node().read().size,
                 ))
                 .left_aligned(),
             )
@@ -249,7 +232,6 @@ impl App {
         let entries: Vec<ListItem> = self
             .curent_file_node()
             .read()
-            .unwrap()
             .children
             .iter()
             .enumerate()
@@ -260,15 +242,14 @@ impl App {
                         "{} - {}",
                         entry
                             .read()
-                            .unwrap()
                             .name
-                            .replace(&self.curent_file_node().read().unwrap().name, "")
+                            .replace(&self.curent_file_node().read().name, "")
                             .replace("/", "")
-                            + match entry.read().unwrap().is_dir {
+                            + match entry.read().is_dir {
                                 true => "/",
                                 false => " ",
                             },
-                        entry.read().unwrap().size
+                        entry.read().size
                     ),
                     TEXT_FG_COLOR,
                 );
@@ -286,7 +267,7 @@ impl App {
             list,
             area,
             buf,
-            &mut self.curent_file_node_mut().write().unwrap().state,
+            &mut self.curent_file_node_mut().write().state,
         );
     }
 }
