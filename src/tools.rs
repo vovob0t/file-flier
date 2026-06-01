@@ -1,4 +1,11 @@
-use std::{cell::RefCell, fmt::Display, rc::Rc, u64};
+use parking_lot::RwLock;
+use std::{
+    cell::RefCell,
+    fmt::Display,
+    rc::Rc,
+    sync::{Arc, Mutex},
+    u64,
+};
 const TEXT_FG_COLOR: Color = SLATE.c200;
 
 use ratatui::{
@@ -29,8 +36,8 @@ pub struct FileNode {
     pub size: FileSize,
     pub name: String,
     pub is_dir: bool,
-    pub children: Vec<Rc<RefCell<FileNode>>>,
-    pub state: RefCell<ListState>,
+    pub children: Vec<Arc<RwLock<FileNode>>>,
+    pub state: ListState,
 }
 
 impl FileNode {
@@ -38,14 +45,14 @@ impl FileNode {
         size: FileSize,
         name: String,
         is_dir: bool,
-        children: Vec<Rc<RefCell<FileNode>>>,
+        children: Vec<Arc<RwLock<FileNode>>>,
     ) -> Self {
         Self {
             size,
             name,
             is_dir,
             children,
-            state: RefCell::new(ListState::default()),
+            state: ListState::default(),
         }
     }
 }
@@ -57,7 +64,7 @@ impl Default for FileNode {
             name: "DEFAULT_PLACEHOLDER".to_string(),
             is_dir: false,
             children: vec![],
-            state: RefCell::new(ListState::default()),
+            state: ListState::default(),
         }
     }
 }

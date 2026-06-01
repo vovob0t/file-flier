@@ -1,15 +1,14 @@
-use std::cell::RefCell;
-use std::rc::Rc;
+use parking_lot::RwLock;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use color_eyre::Result;
 use crossterm::event::{self, KeyCode, KeyEvent, KeyModifiers};
-use crossterm::terminal;
 use file_flier::sort_file_tree;
 use file_flier::{config::Config, tools::FileNode};
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::palette::tailwind::{BLUE, GREEN, SLATE};
+use ratatui::style::palette::tailwind::{BLUE, CYAN, GREEN, INDIGO, RED, SLATE, VIOLET, YELLOW};
 use ratatui::style::{Color, Modifier, Style, Stylize};
 use ratatui::symbols::border::THICK;
 use ratatui::text::Line;
@@ -19,18 +18,17 @@ use ratatui::widgets::{
 };
 use ratatui::{DefaultTerminal, symbols};
 
-const TODO_HEADER_STYLE: Style = Style::new().fg(SLATE.c100).bg(BLUE.c800);
-const NORMAL_ROW_BG: Color = SLATE.c950;
-const ALT_ROW_BG_COLOR: Color = SLATE.c900;
-const SELECTED_STYLE: Style = Style::new().bg(SLATE.c800).add_modifier(Modifier::BOLD);
+const TODO_HEADER_STYLE: Style = Style::new().fg(YELLOW.c100).bg(CYAN.c950);
+const NORMAL_ROW_BG: Color = INDIGO.c950;
+const ALT_ROW_BG_COLOR: Color = VIOLET.c950;
+const SELECTED_STYLE: Style = Style::new().bg(SLATE.c400).add_modifier(Modifier::BOLD);
 const TEXT_FG_COLOR: Color = SLATE.c200;
 const COMPLETED_TEXT_FG_COLOR: Color = GREEN.c500;
 
 #[derive(Debug)]
 pub struct App {
-    pub file_tree: Rc<RefCell<FileNode>>,
-    pub curent_directory: Rc<RefCell<FileNode>>,
-    pub nodes_history: Vec<Rc<RefCell<FileNode>>>,
+    pub file_tree: Arc<RwLock<FileNode>>,
+    pub nodes_history: Vec<Arc<RwLock<FileNode>>>,
     pub config: Config,
     pub should_exit: bool,
     pub file_tree_initialized: bool,
@@ -41,24 +39,21 @@ pub struct App {
 impl App {
     pub fn new(cfg: Config) -> Self {
         // let file_tree = FileNode::default();
-        let mut new_file_tree = Self {
-            file_tree: Rc::new(RefCell::new(FileNode::default())),
-            curent_directory: Rc::new(RefCell::new(FileNode::default())),
+        Self {
+            file_tree: Arc::new(RwLock::new(FileNode::default())),
             nodes_history: vec![],
             config: cfg,
             should_exit: false,
             file_tree_initialized: false,
             loading_screen_initialize: false,
             initializing_time: Duration::new(0, 0),
-        };
-        new_file_tree.curent_directory = Rc::clone(&new_file_tree.file_tree);
-        new_file_tree
+        }
     }
 
-    pub fn curent_file_node_mut(&mut self) -> &Rc<RefCell<FileNode>> {
+    pub fn curent_file_node_mut(&mut self) -> &Arc<RwLock<FileNode>> {
         self.nodes_history.iter().last().unwrap()
     }
-    pub fn curent_file_node(&self) -> &Rc<RefCell<FileNode>> {
+    pub fn curent_file_node(&self) -> &Arc<RwLock<FileNode>> {
         self.nodes_history.iter().last().unwrap()
     }
 
@@ -102,59 +97,40 @@ impl App {
     }
 
     fn change_curent_path_into_selected(&mut self) {
-        let selected_entry_indx = self
-            .curent_file_node_mut()
-            .borrow()
-            .state
-            .borrow()
-            .selected();
+        let selected_entry_indx = self.curent_file_node_mut().read().state.selected();
 
         if let Some(i) = selected_entry_indx {
-            let curent_node = Rc::clone(&self.curent_file_node_mut().borrow().children[i]);
+            let curent_file_node = Arc::clone(&self.curent_file_node_mut().read().children[i]);
 
-            self.nodes_history.push(curent_node);
+            if !curent_file_node.read().is_dir {
+                if let Err(err) = open::that(&curent_file_node.read().name) {
+                    eprintln!("Error occured when tried to open file - {err}")
+                }
+            };
+
+            self.nodes_history.push(curent_file_node);
             sort_file_tree(
-                &mut self.nodes_history.iter().last().unwrap().borrow_mut(),
+                &mut self.nodes_history.iter().last().unwrap().write(),
                 &self.config.sort_type,
             );
         }
     }
 
     fn select_none(&mut self) {
-        self.curent_file_node_mut()
-            .borrow()
-            .state
-            .borrow_mut()
-            .select(None);
+        self.curent_file_node_mut().write().state.select(None);
     }
 
     fn move_up(&mut self) {
-        self.curent_file_node_mut()
-            .borrow()
-            .state
-            .borrow_mut()
-            .select_previous();
+        self.curent_file_node_mut().write().state.select_previous();
     }
     fn move_down(&mut self) {
-        self.curent_file_node_mut()
-            .borrow()
-            .state
-            .borrow_mut()
-            .select_next();
+        self.curent_file_node_mut().write().state.select_next();
     }
     fn move_to_first(&mut self) {
-        self.curent_file_node_mut()
-            .borrow()
-            .state
-            .borrow_mut()
-            .select_first();
+        self.curent_file_node_mut().write().state.select_first();
     }
     fn move_to_last(&mut self) {
-        self.curent_file_node_mut()
-            .borrow()
-            .state
-            .borrow_mut()
-            .select_last();
+        self.curent_file_node_mut().write().state.select_last();
     }
 }
 
@@ -166,15 +142,23 @@ impl Widget for &mut App {
                 return;
             }
 
+            // self.file_tree.write().children = vec![
+            //     Arc::new(RwLock::new(FileNode::default())),
+            //     Arc::new(RwLock::new(FileNode::default())),
+            //     Arc::new(RwLock::new(FileNode::default())),
+            // ];
+            // self.nodes_history.push(Arc::clone(&self.file_tree));
+            // self.file_tree_initialized = true;
+            // Widget::render(Clear, area, buf);
+
             let initialization_time_begin = Instant::now();
-            self.file_tree = Rc::new(RefCell::new(
+            self.file_tree = Arc::new(RwLock::new(
                 file_flier::create_dir_tree_from_path(self.config.path.as_ref()).unwrap(),
             ));
 
-            sort_file_tree(&mut self.file_tree.borrow_mut(), &self.config.sort_type);
-            self.curent_directory = Rc::clone(&self.file_tree);
+            sort_file_tree(&mut self.file_tree.write(), &self.config.sort_type);
 
-            self.nodes_history.push(Rc::clone(&self.file_tree));
+            self.nodes_history.push(Arc::clone(&self.file_tree));
 
             self.file_tree_initialized = true;
             self.initializing_time = initialization_time_begin.elapsed();
@@ -216,10 +200,10 @@ impl App {
             .render(area, buf);
     }
 
-    fn render_header(area: Rect, buf: &mut Buffer, time: Duration) {
+    fn render_header(area: Rect, buf: &mut Buffer, time_elapsed: Duration) {
         Paragraph::new(format!(
             "File-flier - disk space analyzer\n Time spend initializing file system - {:.2}s",
-            time.as_secs_f32()
+            time_elapsed.as_secs_f32()
         ))
         .centered()
         .bold()
@@ -237,8 +221,8 @@ impl App {
             .title(
                 Line::raw(format!(
                     "Curent directory - {}, size - {}",
-                    self.curent_file_node().borrow().name,
-                    self.curent_file_node().borrow().size,
+                    self.curent_file_node().read().name,
+                    self.curent_file_node().read().size,
                 ))
                 .left_aligned(),
             )
@@ -247,7 +231,7 @@ impl App {
 
         let entries: Vec<ListItem> = self
             .curent_file_node()
-            .borrow()
+            .read()
             .children
             .iter()
             .enumerate()
@@ -257,15 +241,15 @@ impl App {
                     format!(
                         "{} - {}",
                         entry
-                            .borrow()
+                            .read()
                             .name
-                            .replace(&self.curent_file_node().borrow().name, "")
+                            .replace(&self.curent_file_node().read().name, "")
                             .replace("/", "")
-                            + match entry.borrow().is_dir {
+                            + match entry.read().is_dir {
                                 true => "/",
                                 false => " ",
                             },
-                        entry.borrow().size
+                        entry.read().size
                     ),
                     TEXT_FG_COLOR,
                 );
@@ -283,7 +267,7 @@ impl App {
             list,
             area,
             buf,
-            &mut self.curent_file_node_mut().borrow().state.borrow_mut(),
+            &mut self.curent_file_node_mut().write().state,
         );
     }
 }
