@@ -99,6 +99,8 @@ pub fn sort_file_tree(file_tree: &mut FileNode, sort_type: &SortType) {
 }
 
 pub fn create_dir_tree_from_path(dir: &Path) -> Result<FileNode, io::Error> {
+    let (bytes_tx, bytes_rx) = mpsc::channel();
+
     let mut bytes_count: u64 = 0;
     let bytes_mutex = Arc::new(Mutex::new(0_u64));
 
@@ -145,10 +147,15 @@ pub fn create_dir_tree_from_path(dir: &Path) -> Result<FileNode, io::Error> {
                     let bytes_ref = Arc::clone(&bytes_mutex);
                     let children_ref = Arc::clone(&children_mutex);
 
+                    let bytes_tx1 = bytes_tx.clone();
                     let handle = thread::spawn(move || {
                         let file_node = create_dir_tree_from_path(&path);
                         *bytes_ref.lock().unwrap() +=
                             file_node.as_ref().unwrap().size.size_metric_to_bytes();
+
+                        bytes_tx1
+                            .send(file_node.as_ref().unwrap().size.size_metric_to_bytes())
+                            .unwrap();
 
                         children_ref
                             .write()
@@ -177,6 +184,11 @@ pub fn create_dir_tree_from_path(dir: &Path) -> Result<FileNode, io::Error> {
 
     for handle in thread_pool {
         handle.join().unwrap();
+    }
+    let mut size: u64 = 0;
+
+    for bytes in bytes_rx {
+        size += bytes;
     }
 
     let size = FileSize::bytes_to_size_metric(bytes_count + *bytes_mutex.lock().unwrap());
