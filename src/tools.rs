@@ -1,11 +1,5 @@
 use parking_lot::RwLock;
-use std::{
-    cell::RefCell,
-    fmt::Display,
-    rc::Rc,
-    sync::{Arc, Mutex},
-    u64,
-};
+use std::{fmt::Display, sync::Arc};
 const TEXT_FG_COLOR: Color = SLATE.c200;
 
 use ratatui::{

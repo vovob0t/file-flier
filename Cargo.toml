@@ -10,3 +10,4 @@ open = "5.3.5"
 # parking_lot = "0.12.5"
 parking_lot = { version = "0.12.5", features = ["deadlock_detection"] }
 ratatui = "0.30.0"
+rayon = "1.12.0"

@@ -1,5 +1,15 @@
+// use color_eyre::eyre::Ok;
 use parking_lot::RwLock;
-use std::{io, os::unix::fs::MetadataExt, path::Path, sync::Arc, thread};
+use rayon::prelude::*;
+use std::{
+    io,
+    os::unix::fs::MetadataExt,
+    path::Path,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+};
 
 pub mod tools;
 use tools::{FileNode, FileSize};
@@ -88,9 +98,9 @@ pub fn sort_file_tree(file_tree: &mut FileNode, sort_type: &SortType) {
 }
 
 pub fn create_dir_tree_from_path(dir: &Path) -> Result<FileNode, io::Error> {
-    let mut bytes_count: u64 = 0;
+    let bytes_size = AtomicU64::new(0);
 
-    let mut children: Vec<Arc<RwLock<FileNode>>> = vec![];
+    let children: Vec<Arc<RwLock<FileNode>>> = vec![];
 
     let is_dir: bool = true;
     let name = dir.to_str().unwrap_or("NOT_AUTHORIZED_TO_READ").to_string();
@@ -112,100 +122,55 @@ pub fn create_dir_tree_from_path(dir: &Path) -> Result<FileNode, io::Error> {
         return Ok(FileNode::new(size, name, is_dir, children));
     };
 
-    let bytes_mutex = Arc::new(RwLock::new(0_u64));
+    let children: Vec<Arc<RwLock<FileNode>>> = dir_entries
+        .par_bridge()
+        .map(|entry| -> Result<Arc<RwLock<FileNode>>, String> {
+            match entry {
+                Ok(entry) => match entry
+                    .metadata()
+                    .map_err(|err| format!("Error - {err}"))?
+                    .is_dir()
+                {
+                    false => {
+                        let bytes_count = entry
+                            .metadata()
+                            .map_err(|err| format!("Error - {err}"))?
+                            .size();
 
-    let children_mutex: Arc<RwLock<Vec<Arc<RwLock<FileNode>>>>> = Arc::new(RwLock::new(vec![]));
-    let mut thread_pool = vec![];
+                        bytes_size.fetch_add(bytes_count, Ordering::Relaxed);
 
-    for entry in dir_entries {
-        match entry {
-            Ok(entry) => match entry.metadata()?.is_dir() {
-                false => {
-                    // let path = entry.path();
-                    // let size = entry.metadata()?.size();
-                    // let bytes_ref = Arc::clone(&bytes_mutex);
-                    // let children_ref = Arc::clone(&children_mutex);
-                    //
-                    // let handle = thread::spawn(move || {
-                    //     *bytes_ref.write() += size;
-                    //
-                    //     let Ok(children_file_node) = create_file_node_from_path(&path) else {
-                    //         return;
-                    //     };
-                    //
-                    //     children_ref
-                    //         .write()
-                    //         .push(Arc::new(RwLock::new(children_file_node)));
-                    // });
-                    //
-                    // thread_pool.push(handle);
-
-                    bytes_count += entry.metadata()?.size();
-
-                    let Ok(child_file_node) = create_file_node_from_path(&entry.path()) else {
-                        eprintln!("Couldn't read - {:?}", &entry.path());
-                        continue;
-                    };
-
-                    children
-                        // .write()
-                        .push(Arc::new(RwLock::new(child_file_node)));
-                }
-                true => {
-                    let path = entry.path();
-                    let bytes_ref = Arc::clone(&bytes_mutex);
-                    let children_ref = Arc::clone(&children_mutex);
-
-                    // let bytes_tx1 = bytes_tx.clone();
-                    let handle = thread::spawn(move || {
-                        // eprintln!("Sosalka");
-                        let Ok(file_node) = create_dir_tree_from_path(&path) else {
-                            eprintln!("Couldn't read directory - {}", path.display());
-                            return;
+                        let Ok(child_file_node) = create_file_node_from_path(&entry.path()) else {
+                            eprintln!("Couldn't read - {:?}", &entry.path());
+                            return Err(format!("Couldn't read - {:?}", &entry.path()));
                         };
 
-                        *bytes_ref.write() += file_node.size.size_metric_to_bytes();
+                        Ok(Arc::new(RwLock::new(child_file_node)))
+                    }
+                    true => {
+                        let Ok(child_dir_node) = create_dir_tree_from_path(&entry.path()) else {
+                            // println!("Couldn't read - {:?}", &entry.path());
+                            return Err(format!("Couldn't read - {:?}", &entry.path()));
+                        };
 
-                        // bytes_tx1
-                        //     .send(file_node.as_ref().unwrap().size.size_metric_to_bytes())
-                        //     .unwrap();
+                        // bytes_count += child_dir_node.size.size_metric_to_bytes();
+                        let bytes_count = child_dir_node.size.size_metric_to_bytes();
+                        bytes_size.fetch_add(bytes_count, Ordering::Relaxed);
 
-                        children_ref.write().push(Arc::new(RwLock::new(file_node)));
-                        // tx.send(file_node).unwrap();
-                        //
-                    });
-
-                    thread_pool.push(handle);
-                    // let Ok(child_dir_node) = create_dir_tree_from_path(&entry.path()) else {
-                    //     // println!("Couldn't read - {:?}", &entry.path());
-                    //     continue;
-                    // };
-
-                    // bytes_count += child_dir_node.size.size_metric_to_bytes();
-                    // children.push(Arc::new(RwLock::new(child_dir_node)));
+                        Ok(Arc::new(RwLock::new(child_dir_node)))
+                        // children.push(Arc::new(RwLock::new(child_dir_node)));
+                    }
+                },
+                Err(e) => {
+                    eprintln!("{:?} - couldn't read because - {}", dir, e);
+                    Err(format!("{:?} - couldn't read because - {}", dir, e))
                 }
-            },
-            Err(e) => {
-                eprintln!("{:?} - couldn't read because - {}", dir, e);
-                continue;
             }
-        }
-    }
+        })
+        .filter(Result::is_ok)
+        .map(Result::unwrap)
+        .collect();
 
-    // let mut size: u64 = 0;
-    // for bytes in bytes_rx {
-    //     size += bytes;
-    // }
-
-    for handle in thread_pool {
-        if let Err(err) = handle.join() {
-            eprintln!("Couldn't join handle\n{err:#?}");
-        };
-    }
-
-    let size = FileSize::bytes_to_size_metric(bytes_count + *bytes_mutex.read());
-
-    children.append(&mut children_mutex.write());
+    let size = FileSize::bytes_to_size_metric(bytes_size.load(Ordering::Relaxed));
 
     Ok(FileNode::new(size, name, is_dir, children))
 }

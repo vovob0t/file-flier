@@ -14,12 +14,15 @@ fn main() -> color_eyre::Result<()> {
         process::exit(1);
     };
 
-    ratatui::run(|terminal| App::new(config).run(terminal));
+    if let Err(err) = ratatui::run(|terminal| App::new(config).run(terminal)) {
+        println!("Error occured while running program\n{err}");
+        process::exit(1);
+    };
     // tui::main()?;
 
     // if let Err(err) = file_flier::run(config) {
     //     println!("Error occured while running program\n{err}");
-    //     process::exit(1);
+    // process::exit(1);
     // }
 
     Ok(())
